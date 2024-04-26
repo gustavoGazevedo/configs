@@ -1,4 +1,4 @@
--- ========================================================================= --
+-- ========================================================================== --
 -- ==                           EDITOR SETTINGS                            == --
 -- ========================================================================== --
 
@@ -25,6 +25,7 @@ vim.g.mapleader = ' '
 vim.keymap.set({ 'n', 'x', 'o' }, '<leader>h', '^')
 vim.keymap.set({ 'n', 'x', 'o' }, '<leader>l', 'g_')
 vim.keymap.set('n', '<leader>a', ':keepjumps normal! ggVG<cr>')
+vim.keymap.set('n', '<leader>v', '<c-v>', { desc = 'visual block mode (for wt)' })
 
 -- Basic clipboard interaction
 vim.keymap.set({ 'n', 'x', 'o' }, 'gy', '"+y', { desc = 'Copy to clipboard' })
@@ -77,34 +78,21 @@ lazy.setup({
 	{ 'nvim-lualine/lualine.nvim' },
 	{ 'nvim-lua/plenary.nvim' },
 	{ 'nvim-treesitter/nvim-treesitter' },
+
+	-- telescope
+	{
+		'nvim-telescope/telescope-fzf-native.nvim',
+		build = 'make'
+	},
+	{ 'nvim-telescope/telescope-ui-select.nvim' },
 	{
 		'nvim-telescope/telescope.nvim',
-		config = function()
-			require 'telescope'.setup {
-				extensions = {
-					fzf = { fuzzy = true, override_generic_sorter = true, override_file_sorter = true, case_mode = 'smart_case' },
-					['ui-select'] = { require 'telescope.themes'.get_dropdown() }
-				},
-				vimgrep_argument = { 'rg', '--smart-case' }
-			}
-			require 'telescope'.load_extension 'ui-select'
-		end,
-		dependencies = {
-			'nvim-lua/plenary.nvim',
-			{
-				'nvim-telescope/telescope-fzf-native.nvim',
-				build = 'make'
-			},
-			'nvim-telescope/telescope-ui-select.nvim'
-		},
 		ft = 'mason',
 		keys = {
-			{ '<C-f>', function() require 'telescope.builtin'.live_grep() end },
 			{ '<C-q>', function() require 'telescope.builtin'.quickfix() end }
 		}
 	},
-	{ 'nvim-telescope/telescope-fzf-native.nvim', build = 'make' },
-	{ 'echasnovski/mini.nvim',                    branch = 'stable' },
+	{ 'echasnovski/mini.nvim',                  branch = 'stable' },
 
 	--mason
 	{
@@ -136,10 +124,24 @@ lazy.setup({
 	{ 'tpope/vim-repeat' },
 	{ 'm4xshen/autoclose.nvim' },
 
-
 	--utils
 	{ 'akinsho/toggleterm.nvim' },
+	{ 'mbbill/undotree' },
 	{ 'ThePrimeagen/vim-be-good' },
+	{
+		"rmagatti/auto-session",
+		config = function()
+			local auto_seession = require("auto-session")
+
+			auto_seession.setup({
+				auto_restore_enabled = false,
+				auto_session_supress_dirs = { "~/", "~/Dev/", "~/Deownloads" }
+			})
+
+			vim.keymap.set("n", "<leader>wr", "<cmd>SessionRestore<CR>", { desc = "Restore session for cwd" })
+			vim.keymap.set("n", "<leader>ws", "<cmd>SessionSave<CR>", { desc = "Save session for auto session root dir" })
+		end
+	}
 })
 
 
@@ -156,10 +158,12 @@ vim.g.netrw_winsize = 30
 vim.keymap.set('n', '<leader>e', '<cmd>Lexplore<cr>', { desc = 'Toggle file explorer' })
 vim.keymap.set('n', '<leader>E', '<cmd>Lexplore %:p:h<cr>', { desc = 'Open file explorer in current file' })
 
+vim.keymap.set('n', '<leader><F5>', vim.cmd.UndotreeToggle, { desc = 'Toggle undotree' })
+
 -- See :help lualine.txt
 require('lualine').setup({
 	options = {
-		theme = 'tokyonight',
+		theme = 'vscode',
 		icons_enabled = false,
 		component_separators = '|',
 		section_separators = '',
@@ -206,13 +210,21 @@ vim.keymap.set('n', '<leader>bc', '<cmd>lua pcall(MiniBufremove.delete)<cr>', { 
 vim.keymap.set('n', '<leader>?', '<cmd>Telescope oldfiles<cr>', { desc = 'Search file history' })
 vim.keymap.set('n', '<leader><space>', '<cmd>Telescope buffers<cr>', { desc = 'Search open files' })
 vim.keymap.set('n', '<leader>ff', '<cmd>Telescope find_files<cr>', { desc = 'Search all files' })
+vim.keymap.set('n', '<c-p>', '<cmd>Telescope find_files<cr>', { desc = 'Search all files' })
 vim.keymap.set('n', '<leader>fg', '<cmd>Telescope live_grep<cr>', { desc = 'Search in project' })
 vim.keymap.set('n', '<leader>fd', '<cmd>Telescope diagnostics<cr>', { desc = 'Search diagnostics' })
 vim.keymap.set('n', '<leader>fs', '<cmd>Telescope current_buffer_fuzzy_find<cr>', { desc = 'Buffer local search' })
 
-if is_unix then
-	require('telescope').load_extension('fzf')
-end
+require('telescope').setup {
+	extensions = {
+		fzf = { fuzzy = true, override_generic_sorter = true, override_file_sorter = true, case_mode = 'smart_case' },
+		['ui-select'] = { require 'telescope.themes'.get_dropdown() }
+	},
+	vimgrep_argument = { 'rg', '--smart-case' }
+}
+
+require('telescope').load_extension('ui-select')
+require('telescope').load_extension('fzf')
 
 local lsp_zero = require('lsp-zero')
 
@@ -275,5 +287,3 @@ require('toggleterm').setup({
 	direction = 'horizontal',
 	shade_terminals = true
 })
-
-
