@@ -23,8 +23,26 @@ function z {
     }
 }
 
-# Defer PowerType/PSReadLine configuration to idle so startup is not blocked
-# (see one-time OnIdle hook at end of file)
+# Provide on-demand activation for PowerType (Alt+P)
+if (Get-Module -ListAvailable -Name PowerType) {
+    if (Get-Command -Name Set-PSReadLineKeyHandler -ErrorAction SilentlyContinue) {
+        Set-PSReadLineKeyHandler -Chord 'Alt+p' -BriefDescription 'Enable PowerType' -LongDescription 'Enable PowerType predictions' -ScriptBlock {
+            if (-not (Get-Module -Name PowerType)) {
+                Enable-PowerType
+            }
+        }
+
+        # Ensure fzf-style reverse history (Ctrl+r) works even before PSFzf is imported
+        Set-PSReadLineKeyHandler -Chord 'Ctrl+r' -BriefDescription 'Fuzzy reverse history' -LongDescription 'Search command history with fzf' -ScriptBlock {
+            if (-not (Get-Module -Name PSFzf)) {
+                Initialize-FzfFunctions
+            }
+            if (Get-Command -Name Invoke-FuzzyHistory -ErrorAction SilentlyContinue) {
+                Invoke-FuzzyHistory
+            }
+        }
+    }
+}
 
 function Initialize-PSReadLineOptions {
     # Remove the proxy function
@@ -35,12 +53,49 @@ function Initialize-PSReadLineOptions {
     Set-PSReadLineOption -MaximumHistoryCount 1000
 }
 
-# Create proxy function (kept for compatibility, but do not call at startup)
-function Set-PSReadLineOptionsInitial { Initialize-PSReadLineOptions }
+# Defer lightweight initialization until shell becomes idle (run once)
+$global:__profileOnIdleSub = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -Action {
+    try { Initialize-PSReadLineOptions } catch { }
+
+    # Late imports that are nice-to-have but not needed at prompt time
+    try {
+        if (-not (Get-Module -Name Microsoft.WinGet.CommandNotFound)) {
+            Import-Module Microsoft.WinGet.CommandNotFound -ErrorAction SilentlyContinue
+        }
+    } catch { }
+
+    try {
+        $ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+        if (Test-Path($ChocolateyProfile)) {
+            Import-Module $ChocolateyProfile -ErrorAction SilentlyContinue
+        }
+    } catch { }
+
+    try {
+        $sub = Get-Variable -Name __profileOnIdleSub -Scope Global -ErrorAction SilentlyContinue
+        if ($null -ne $sub) {
+            Unregister-Event -SubscriptionId $sub.Value.SubscriptionId -ErrorAction SilentlyContinue
+            Remove-Variable -Name __profileOnIdleSub -Scope Global -ErrorAction SilentlyContinue
+        }
+    } catch { }
+} 
 
 # PSFzf has undocumented option to use fd executable for
 # file and directory searching. This enables that option.
-# Initialize PSFzf options on first use (configured inside Initialize-FzfFunctions)
+# Initialize PSFzf options on first use
+function Initialize-PsFzfOptions {
+    # Remove the proxy function
+    Remove-Item -Path Function:\Set-PsFzfOptionsInitial -ErrorAction SilentlyContinue
+    
+    # Set actual PSFzf options
+    Set-PsFzfOption -EnableFd:$true
+    Set-PSReadLineKeyHandler -Key Tab -ScriptBlock { Invoke-FzfTabCompletion }
+    Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+t' -PSReadlineChordReverseHistory 'Ctrl+r'
+    Set-PsFzfOption -TabExpansion
+}
+
+# Create proxy function definition; actual initialization happens on first PSFzf use
+function Set-PsFzfOptionsInitial { Initialize-PsFzfOptions }
 
 
 # Custom function to SetLocation, because PSFzf uses
@@ -186,12 +241,13 @@ function Initialize-FzfFunctions {
     Remove-Item -Path Function:\fz -ErrorAction SilentlyContinue
     Remove-Item -Path Function:\frg -ErrorAction SilentlyContinue
 
-    # Configure PSFzf and keybindings now (first actual use of any fzf function)
-    try { Import-Module PSReadLine -ErrorAction SilentlyContinue } catch {}
-    Set-PsFzfOption -EnableFd:$true
-    Set-PSReadLineKeyHandler -Key Tab -ScriptBlock { Invoke-FzfTabCompletion }
-    Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+t' -PSReadlineChordReverseHistory 'Ctrl+r'
-    Set-PsFzfOption -TabExpansion
+    # Import PSFzf module on-demand and apply its options
+    if (-not (Get-Module -Name PSFzf)) {
+        Import-Module PSFzf -ErrorAction SilentlyContinue
+    }
+    if (Get-Command -Name Set-PsFzfOption -ErrorAction SilentlyContinue) {
+        Initialize-PsFzfOptions
+    }
 
 
     # Define real aliases
@@ -212,28 +268,3 @@ function fh { Initialize-FzfFunctions; fh @args }
 function fkill { Initialize-FzfFunctions; fkill @args }
 function fz { Initialize-FzfFunctions; fz @args }
 function frg { Initialize-FzfFunctions; frg @args }
-
-# One-time idle initializer to finish background configuration without delaying startup
-if (-not $global:__ProfileIdleInitRegistered) {
-    $global:__ProfileIdleInitRegistered = $true
-    Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -Action {
-        try {
-            if (-not $global:__PSReadLineConfigured) {
-                try {
-                    Import-Module PSReadLine -ErrorAction SilentlyContinue
-                } catch {}
-                Set-PSReadLineOption -PredictionSource HistoryAndPlugin -PredictionViewStyle ListView -ErrorAction SilentlyContinue
-                Set-PSReadLineOption -MaximumHistoryCount 1000 -ErrorAction SilentlyContinue
-                $global:__PSReadLineConfigured = $true
-            }
-
-            if (-not $global:__PowerTypeEnabled) {
-                if (Get-Command Enable-PowerType -ErrorAction SilentlyContinue) {
-                    try { Enable-PowerType | Out-Null } catch {}
-                }
-                $global:__PowerTypeEnabled = $true
-            }
-        } catch {}
-        Unregister-Event -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContinue
-    } | Out-Null
-}
