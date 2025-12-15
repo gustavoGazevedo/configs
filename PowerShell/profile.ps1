@@ -246,6 +246,8 @@ function Get-Tips {
   Write-Output $tips | Format-Table
 }
 
+New-Alias -Scope Global -Name tips -Value Get-Tips
+
 # Lazy load PSFzf functions
 function Initialize-FzfFunctions {
     # Remove proxy functions
@@ -276,10 +278,130 @@ function Initialize-FzfFunctions {
 
 New-Alias -Scope Global -Name grep -Value Select-String
 
+# Helper function to find and add executables to PATH
+function Add-ToPathIfFound {
+    param([string]$ExeName, [string[]]$SearchPaths)
+    
+    foreach ($path in $SearchPaths) {
+        if (Test-Path $path) {
+            $exe = Get-ChildItem $path -Recurse -Filter "$ExeName.exe" -ErrorAction SilentlyContinue -Depth 3 | Select-Object -First 1
+            if ($exe) {
+                $exeDir = $exe.DirectoryName
+                if ($env:PATH -notlike "*$exeDir*") {
+                    $env:PATH = "$exeDir;$env:PATH"
+                }
+                return $true
+            }
+        }
+    }
+    return $false
+}
+
+# Try to find and add external tools to PATH
+$searchPaths = @(
+    "$env:LOCALAPPDATA\Microsoft\WinGet\Packages",
+    "$env:USERPROFILE\scoop\shims",
+    "$env:ProgramFiles",
+    "$env:ProgramFiles(x86)"
+)
+
+Add-ToPathIfFound -ExeName "fd" -SearchPaths $searchPaths | Out-Null
+Add-ToPathIfFound -ExeName "rg" -SearchPaths $searchPaths | Out-Null
+Add-ToPathIfFound -ExeName "bat" -SearchPaths $searchPaths | Out-Null
+Add-ToPathIfFound -ExeName "walk" -SearchPaths $searchPaths | Out-Null
+
+# Wrapper functions for external tools (fallback if not in PATH)
+function Find-Executable {
+    param([string]$Name)
+    $exe = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($exe) { return $exe.Source }
+    
+    $searchPaths = @(
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages",
+        "$env:USERPROFILE\scoop\shims",
+        "$env:ProgramFiles",
+        "$env:ProgramFiles(x86)"
+    )
+    
+    foreach ($path in $searchPaths) {
+        if (Test-Path $path) {
+            $found = Get-ChildItem $path -Recurse -Filter "$Name.exe" -ErrorAction SilentlyContinue -Depth 4 | Select-Object -First 1
+            if ($found) { return $found.FullName }
+        }
+    }
+    return $null
+}
+
+# Create wrapper functions for external tools if they exist
+$fdPath = Find-Executable "fd"
+if ($fdPath -and -not (Get-Command fd -ErrorAction SilentlyContinue)) {
+    function fd { & $fdPath $args }
+}
+
+$rgPath = Find-Executable "rg"
+if ($rgPath -and -not (Get-Command rg -ErrorAction SilentlyContinue)) {
+    function rg { & $rgPath $args }
+}
+
+$batPath = Find-Executable "bat"
+if ($batPath -and -not (Get-Command bat -ErrorAction SilentlyContinue)) {
+    function bat { & $batPath $args }
+}
+
+$walkPath = Find-Executable "walk"
+if ($walkPath -and -not (Get-Command walk -ErrorAction SilentlyContinue)) {
+    function walk { & $walkPath $args }
+}
+
+# Handle rd alias conflict - PowerShell has rd as alias for Remove-Item
+# If you have a custom rd command, uncomment the lines below:
+# $rdPath = Find-Executable "rd"
+# if ($rdPath) {
+#     Remove-Alias rd -ErrorAction SilentlyContinue -Force
+#     function rd { & $rdPath $args }
+# }
+
 # Create proxy functions that will initialize PSFzf on first use
-function fcd { Initialize-FzfFunctions; fcd @args }
-function fe { Initialize-FzfFunctions; fe @args }
-function fh { Initialize-FzfFunctions; fh @args }
-function fkill { Initialize-FzfFunctions; fkill @args }
-function fz { Initialize-FzfFunctions; fz @args }
-function frg { Initialize-FzfFunctions; frg @args }
+function fcd { 
+    if (-not (Get-Module -Name PSFzf)) { Initialize-FzfFunctions }
+    if (Get-Command -Name Invoke-FuzzySetLocation2 -ErrorAction SilentlyContinue) {
+        Invoke-FuzzySetLocation2 @args
+    }
+}
+function fe { 
+    if (-not (Get-Module -Name PSFzf)) { Initialize-FzfFunctions }
+    if (Get-Command -Name Invoke-FuzzyEdit -ErrorAction SilentlyContinue) {
+        Invoke-FuzzyEdit @args
+    }
+}
+function fh { 
+    if (-not (Get-Module -Name PSFzf)) { Initialize-FzfFunctions }
+    if (Get-Command -Name Invoke-FuzzyHistory -ErrorAction SilentlyContinue) {
+        Invoke-FuzzyHistory @args
+    }
+}
+function fkill { 
+    if (-not (Get-Module -Name PSFzf)) { Initialize-FzfFunctions }
+    if (Get-Command -Name Invoke-FuzzyKillProcess -ErrorAction SilentlyContinue) {
+        Invoke-FuzzyKillProcess @args
+    }
+}
+function fz { 
+    if (-not (Get-Module -Name PSFzf)) { Initialize-FzfFunctions }
+    if (Get-Command -Name Invoke-FuzzyZLocation -ErrorAction SilentlyContinue) {
+        Invoke-FuzzyZLocation @args
+    }
+}
+function frg { 
+    if (-not (Get-Module -Name PSFzf)) { Initialize-FzfFunctions }
+    if (Get-Command -Name Invoke-PsFzfRipgrep -ErrorAction SilentlyContinue) {
+        if ($args.Count -eq 0) {
+            $searchString = Read-Host "Enter search string"
+            if ($searchString) {
+                Invoke-PsFzfRipgrep -SearchString $searchString
+            }
+        } else {
+            Invoke-PsFzfRipgrep -SearchString ($args -join ' ')
+        }
+    }
+}
