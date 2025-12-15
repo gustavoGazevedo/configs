@@ -31,14 +31,29 @@ if (Get-Module -ListAvailable -Name PowerType) {
                 Enable-PowerType
             }
         }
+    }
+}
 
-        # Ensure fzf-style reverse history (Ctrl+r) works even before PSFzf is imported
-        Set-PSReadLineKeyHandler -Chord 'Ctrl+r' -BriefDescription 'Fuzzy reverse history' -LongDescription 'Search command history with fzf' -ScriptBlock {
-            if (-not (Get-Module -Name PSFzf)) {
-                Initialize-FzfFunctions
-            }
-            if (Get-Command -Name Invoke-FuzzyHistory -ErrorAction SilentlyContinue) {
-                Invoke-FuzzyHistory
+# Proxy handler for Ctrl+R that initializes PSFzf on first use
+if (Get-Command -Name Set-PSReadLineKeyHandler -ErrorAction SilentlyContinue) {
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+r' -BriefDescription 'Fuzzy reverse history' -LongDescription 'Search command history with fzf' -ScriptBlock {
+        if (-not (Get-Module -Name PSFzf)) {
+            Initialize-FzfFunctions
+        }
+        
+        if (Get-Command -Name Invoke-Fzf -ErrorAction SilentlyContinue) {
+            $historyPath = (Get-PSReadLineOption).HistorySavePath
+            if (Test-Path $historyPath) {
+                $history = Get-Content $historyPath -ErrorAction SilentlyContinue | Where-Object { $_ -and $_.Trim().Length -gt 0 } | Select-Object -Last 1000 -Unique
+                if ($history) {
+                    $selected = $history | Invoke-Fzf
+                    if ($selected -and $selected.Trim().Length -gt 0) {
+                        $line = ''
+                        $cursor = $null
+                        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+                        [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $line.Length, $selected.Trim())
+                    }
+                }
             }
         }
     }
