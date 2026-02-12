@@ -1,26 +1,41 @@
 # Remove commented out lines that are not being used
 # Removing:
 # oh-my-posh init pwsh --config "$env:POSH_THEMES_PATH/kali.omp.json" | Invoke-Expression
-# Invoke-Expression (& { (zoxide init powershell | Out-String) })
 
-# To make ZLocation module work in every PowerShell instance.
-# Replace direct ZLocation import with lazy-loading function
+if (-not (Get-Module -ListAvailable -Name z)) {
+    try {
+        Install-Module z -Scope CurrentUser -Force -AllowClobber
+    } catch {
+        Write-Warning "Could not install z module: $_"
+    }
+}
+if (Get-Module -ListAvailable -Name z) {
+    Import-Module z
+    $script:zJumpCmd = (Get-Module z).ExportedCommands['z']
+    if ($script:zJumpCmd) {
+        function zz { & $script:zJumpCmd @args }
+    }
+}
+
+# ZLocation as z (loads on first use)
 function z {
     param($location)
     
-    # Remove the proxy function and load the real module
     Remove-Item -Path Alias:\z -ErrorAction SilentlyContinue
     Remove-Item -Path Function:\z -ErrorAction SilentlyContinue
     
-    # Import ZLocation
     Import-Module ZLocation
     
-    # Call ZLocation with the provided argument
     if ($location) {
         Invoke-Expression "z $location"
     } else {
         Write-Output "ZLocation loaded. Use 'z <location>' to jump to frequently used directories."
     }
+}
+
+# zoxide as zx
+if (Get-Command zoxide -ErrorAction SilentlyContinue) {
+    Invoke-Expression (& { (zoxide init powershell --cmd zx | Out-String) })
 }
 
 # Provide on-demand activation for PowerType (Alt+P)
@@ -174,6 +189,16 @@ function Get-Tips {
     [pscustomobject]@{
       Command     = 'z'
       Description = 'ZLocation (loads on first use)'
+
+    },
+    [pscustomobject]@{
+      Command     = 'zx'
+      Description = 'zoxide - jump to frecent dirs'
+
+    },
+    [pscustomobject]@{
+      Command     = 'zz'
+      Description = 'badmotorfinger/z - jump to frecent dirs'
 
     },
     [pscustomobject]@{
