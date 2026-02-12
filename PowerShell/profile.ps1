@@ -2,13 +2,6 @@
 # Removing:
 # oh-my-posh init pwsh --config "$env:POSH_THEMES_PATH/kali.omp.json" | Invoke-Expression
 
-if (-not (Get-Module -ListAvailable -Name z)) {
-    try {
-        Install-Module z -Scope CurrentUser -Force -AllowClobber
-    } catch {
-        Write-Warning "Could not install z module: $_"
-    }
-}
 if (Get-Module -ListAvailable -Name z) {
     Import-Module z
     $script:zJumpCmd = (Get-Module z).ExportedCommands['z']
